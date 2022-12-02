@@ -28,9 +28,23 @@ def approval():
         return Return(
             And(
                 App.localGet(account, local_opponent) == Bytes(""),
-                App.localGet(account, local_wager) == Bytes(""),
+                App.localGet(account, local_wager) == Int(0),
                 App.localGet(account, local_commitment) == Bytes(""),
                 App.localGet(account, local_reveal) == Bytes("")
+            )
+        )
+
+    @Subroutine(TealType.uint64)
+    def is_valid_play(play: Expr):
+        first_character = ScratchVar(TealType.bytes)
+        return Seq(
+            first_character.store(Substring(play, Int(0), Int(1))),
+            Return (
+                Or(
+                    first_character.load() == Bytes("r"),
+                    first_character.load() == Bytes("p"),
+                    first_character.load() == Bytes("s"),
+                )
             )
         )
 
@@ -67,9 +81,40 @@ def approval():
             Approve()
         )
 
+
+
     @Subroutine(TealType.none)
     def accept_challenge():
-        return Reject()
+        return Seq(
+            program.check_self(
+                group_size = Int(2),
+                group_index = Int(0)
+            ),
+            program.check_rekey_zero(2),
+            Assert(
+                And(
+                    # Check if challenger account has opted in
+                    App.optedIn(Txn.accounts[1], Global.current_application_id()),
+
+                    # Check if challenger account has challenged this account
+                    App.localGet(Txn.accounts[1], local_opponent) == Txn.sender(),
+
+                    # Check wager payment transaction
+                    Gtxn[1].type_enum() == TxnType.Payment,
+                    Gtxn[1].receiver() == Global.current_application_address(),
+                    Gtxn[1].close_remainder_to() == Global.zero_address(),
+                    Gtxn[1].amount() == App.localGet(Txn.accounts[1], local_wager),
+
+                    # validate play
+                    Txn.application_args.length() == Int(2),
+                    is_valid_play(Txn.application_args[1])
+                ),
+            ),
+            App.localPut(Txn.sender(), local_opponent, Txn.accounts[1]),
+            App.localPut(Txn.sender(), local_wager, Gtxn[1].amount()),
+            App.localPut(Txn.sender(), local_reveal, Txn.application_args[1]),
+            Approve()
+        )
 
     @Subroutine(TealType.none)
     def reveal():

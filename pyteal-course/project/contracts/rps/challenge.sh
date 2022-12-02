@@ -10,7 +10,11 @@ goal app call \
     --app-account "$OPPONENT_ACCOUNT" \
     --app-arg "str:challenge" \
     --app-arg "b64:$CHALLENGE_B64" \
-    -o challenge-call.tx
+    -o challenge-call.tx 
+#output the transaction to a file instead of sending it
+#to the network since only a group of 2 transactions
+#is accepted
+
 
 # create wager transaction
 goal clerk send \
@@ -32,4 +36,4 @@ goal clerk sign -i challenge-split-1.tx -o challenge-signed-1.tx
 cat challenge-signed-0.tx challenge-signed-1.tx > challenge-signed-final.tx
 
 # send transaction
-goal clerk rawsend -f challenge-signed-final.tx
+goal clerk rawsend -f challenge-signed-final.tx 
