@@ -3,7 +3,7 @@
 from pyteal import *
 
 ## 1. Update App Name
-"""Basic Counter Application"""
+"""Modified Counter Application"""
 
 def approval_program():
     handle_creation = Seq([
@@ -12,34 +12,48 @@ def approval_program():
     ])
 
     # 2. Change handle_optin to return 1
-    handle_optin = Return(Int(0))
+    handle_optin = Return(Int(1))
     handle_closeout = Return(Int(0))
     handle_updateapp = Return(Int(0))
     handle_deleteapp = Return(Int(0))
     scratchCount = ScratchVar(TealType.uint64)
     # 3 - add local scratch var
+    localCount = ScratchVar(TealType.uint64)
 
     # 4 - rename add and deduct to add_global and deduct_global
-    add = Seq([
+    add_global = Seq([
         scratchCount.store(App.globalGet(Bytes("Count"))),
         App.globalPut(Bytes("Count"), scratchCount.load() + Int(1)),
         Return(Int(1))
     ])
 
-    deduct = Seq([
+    deduct_global = Seq([
         scratchCount.store(App.globalGet(Bytes("Count"))),
         App.globalPut(Bytes("Count"), scratchCount.load() - Int(1)),
         Return(Int(1))
     ])
 
     # 5 - create a local version of add and deduct
+    add_local = Seq([
+        localCount.store(App.localGet(Txn.sender(), Bytes("Count"))),
+        App.localPut(Txn.sender(), Bytes("Count"), localCount.load() + Int(1)),
+        Return(Int(1))
+    ])
+
+    deduct_local = Seq([
+        localCount.store(App.localGet(Txn.sender(), Bytes("Count"))),
+        App.localPut(Txn.sender(), Bytes("Count"), localCount.load() - Int(1)),
+        Return(Int(1))
+    ])
 
     # 6 -Update the handle_noop conditions to use global and add local options
     handle_noop = Seq(
         Assert(Global.group_size() == Int(1)), 
         Cond(
-            [Txn.application_args[0] == Bytes("Add"), add], 
-            [Txn.application_args[0] == Bytes("Deduct"), deduct]
+            [Txn.application_args[0] == Bytes("Add_Global"), add_global], 
+            [Txn.application_args[0] == Bytes("Deduct_Global"), deduct_global],
+            [Txn.application_args[0] == Bytes("Add_Local"), add_local], 
+            [Txn.application_args[0] == Bytes("Deduct_Local"), deduct_local],
         )
     )
 
@@ -62,5 +76,12 @@ def clear_state_program():
 
 # 7 - update the file to 
 # print out the results
-print(approval_program())
-print(clear_state_program())
+appFile = open('approval.teal', 'w')
+appFile.write(approval_program())
+appFile.close()
+
+
+clearFile = open('clear.teal', 'w')
+clearFile.write(clear_state_program())
+clearFile.close()
+
