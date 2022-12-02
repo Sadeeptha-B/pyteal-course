@@ -48,6 +48,33 @@ def approval():
             )
         )
 
+
+    @Subroutine(TealType.uint64)
+    def play_value(play: Expr):
+        first_character = ScratchVar(TealType.bytes)
+        return Seq(
+            first_character.store(Substring(play, Int(0), Int(1))),
+            Return (
+                Cond(
+                    [first_character.load() == Bytes("r"), Int(0)],
+                    [first_character.load() == Bytes("p"), Int(1)],
+                    [first_character.load() == Bytes("s"), Int(2)],
+                )
+            )
+        )
+
+    
+    @Subroutine(TealType.uint64)
+    def winner_account_index(challenger_play: Expr, opponent_play:Expr):
+        # Skip tie condition
+        return Return(
+            Cond(
+                [(opponent_play + Int(1)) % Int(3) == challenger_play, Int(0)]
+                [(challenger_play + Int(1)) % Int(3) == opponent_play, Int(1)]
+            )
+        )
+
+
     @Subroutine(TealType.none)
     def create_challenge():
         return Seq(
@@ -80,7 +107,6 @@ def approval():
             App.localPut(Txn.sender(), local_commitment, Txn.application_args[1]),
             Approve()
         )
-
 
 
     @Subroutine(TealType.none)
@@ -116,9 +142,71 @@ def approval():
             Approve()
         )
 
+
+    @Subroutine(TealType.none)
+    def send_reward(account_index: Expr, amount: Expr):
+        return Seq(
+            InnerTxnBuilder.Begin(),
+            InnerTxnBuilder.SetFields({
+                TxnField.type_enum: TxnType.Payment, 
+                TxnField.reciever: Txn.accounts[account_index],
+                TxnField.amount: amount, 
+            }),
+            InnerTxnBuilder.Submit()
+        )
+
+
     @Subroutine(TealType.none)
     def reveal():
-        return Reject()
+        challenger_play = ScratchVar(TealType.uint64)
+        opponent_play = ScratchVar(TealType.uint64)
+
+        return Seq(
+            program.check_self(
+                group_size = Int(1),
+                group_index = Int(0)
+            ),
+            program.check_rekey_zero(2),
+            Assert(
+                And(
+                    # check mutual oponnent ship
+                    App.localGet(Txn.sender(), local_opponent) == Txn.accounts[1],
+                    App.localGet(Txn.account[1], local_opponent) == Txn.sender(),
+
+                    # check same wager
+                    App.localGet(Txn.sender(), local_wager) == App.localGet(Txn.accounts[1], local_wager),
+
+                    #check commitment from challenger is not empty
+                    App.localGet(Txn.sender(), local_commitment) != Bytes(""),
+
+                    # Check reveal from opponent is not empty
+                    App.localGet(Txn.accounts[1], local_reveal) != Bytes(""),
+                    
+                    # Check commit/reveal from challenger
+                    Txn.application_args.length() == Int(2),
+                    Sha256(Txn.application_args[1]) == App.localGet(Txn.sender(), local_commitment),
+                )
+            ),
+
+        #Convert bytestring plays to numbers
+        challenger_play.store(play_value(Txn.application_args[1])),
+        opponent_play.store(play_value(App.localGet(Txn.accounts[1], local_reveal)))
+        If (challenger_play.load == opponent_play.load())
+        .Then(
+            # Tie
+            # Return wagers  --> Inner Transaction
+            Seq(
+                
+            )
+        ).Else (
+            # Win
+            # Send rewards
+            Seq(
+
+            )
+        )
+
+        )
 
 
     return program.event(
