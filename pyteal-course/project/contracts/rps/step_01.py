@@ -48,7 +48,6 @@ def approval():
             )
         )
 
-
     @Subroutine(TealType.uint64)
     def play_value(play: Expr):
         first_character = ScratchVar(TealType.bytes)
@@ -63,17 +62,15 @@ def approval():
             )
         )
 
-    
     @Subroutine(TealType.uint64)
     def winner_account_index(challenger_play: Expr, opponent_play:Expr):
         # Skip tie condition
         return Return(
             Cond(
-                [(opponent_play + Int(1)) % Int(3) == challenger_play, Int(0)]
-                [(challenger_play + Int(1)) % Int(3) == opponent_play, Int(1)]
+                [(opponent_play + Int(1)) % Int(3) == challenger_play, Int(0)],
+                [(challenger_play + Int(1)) % Int(3) == opponent_play, Int(1)],
             )
         )
-
 
     @Subroutine(TealType.none)
     def create_challenge():
@@ -99,7 +96,7 @@ def approval():
 
                     # Check commitment: 2nd argument
                     Txn.application_args.length() == Int(2)
-                ),
+                )
             ),
 
             App.localPut(Txn.sender(), local_opponent, Txn.accounts[1]),
@@ -107,7 +104,6 @@ def approval():
             App.localPut(Txn.sender(), local_commitment, Txn.application_args[1]),
             Approve()
         )
-
 
     @Subroutine(TealType.none)
     def accept_challenge():
@@ -133,7 +129,7 @@ def approval():
 
                     # validate play
                     Txn.application_args.length() == Int(2),
-                    is_valid_play(Txn.application_args[1])
+                    is_valid_play(Txn.application_args[1]),
                 ),
             ),
             App.localPut(Txn.sender(), local_opponent, Txn.accounts[1]),
@@ -142,24 +138,24 @@ def approval():
             Approve()
         )
 
-
     @Subroutine(TealType.none)
     def send_reward(account_index: Expr, amount: Expr):
         return Seq(
             InnerTxnBuilder.Begin(),
             InnerTxnBuilder.SetFields({
                 TxnField.type_enum: TxnType.Payment, 
-                TxnField.reciever: Txn.accounts[account_index],
+                TxnField.receiver: Txn.accounts[account_index],
                 TxnField.amount: amount, 
+                TxnField.fee: Int(0),
             }),
-            InnerTxnBuilder.Submit()
+            InnerTxnBuilder.Submit(),
         )
-
 
     @Subroutine(TealType.none)
     def reveal():
         challenger_play = ScratchVar(TealType.uint64)
         opponent_play = ScratchVar(TealType.uint64)
+        wager = ScratchVar(TealType.uint64)
 
         return Seq(
             program.check_self(
@@ -171,7 +167,7 @@ def approval():
                 And(
                     # check mutual oponnent ship
                     App.localGet(Txn.sender(), local_opponent) == Txn.accounts[1],
-                    App.localGet(Txn.account[1], local_opponent) == Txn.sender(),
+                    App.localGet(Txn.accounts[1], local_opponent) == Txn.sender(),
 
                     # check same wager
                     App.localGet(Txn.sender(), local_wager) == App.localGet(Txn.accounts[1], local_wager),
@@ -188,26 +184,35 @@ def approval():
                 )
             ),
 
-        #Convert bytestring plays to numbers
-        challenger_play.store(play_value(Txn.application_args[1])),
-        opponent_play.store(play_value(App.localGet(Txn.accounts[1], local_reveal)))
-        If (challenger_play.load == opponent_play.load())
-        .Then(
-            # Tie
-            # Return wagers  --> Inner Transaction
-            Seq(
-                
+            #Convert bytestring plays to numbers
+            challenger_play.store(play_value(Txn.application_args[1])),
+            opponent_play.store(play_value(App.localGet(Txn.accounts[1], local_reveal))),
+            wager.store(App.localGet(Txn.sender(), local_wager)),
+
+            If (
+                challenger_play.load() == opponent_play.load()
             )
-        ).Else (
-            # Win
-            # Send rewards
-            Seq(
-
+            .Then(
+                # Tie
+                # Return wagers  --> Inner Transaction
+                Seq(
+                    Assert(Txn.fee() >= Global.min_txn_fee() * Int(3)),
+                    send_reward(Int(0), wager.load()),
+                    send_reward(Int(1), wager.load()),
+                ),
             )
+            .Else (
+                # Win
+                # Send rewards
+                Seq(
+                    Assert(Txn.fee() >= Global.min_txn_fee() * Int(2)),
+                    send_reward(winner_account_index(challenger_play.load(), opponent_play.load()), wager.load() * Int(2))
+                )
+            ),
+            reset(Txn.sender()),
+            reset(Txn.accounts[1]),
+            Approve(),
         )
-
-        )
-
 
     return program.event(
         init = Approve(),

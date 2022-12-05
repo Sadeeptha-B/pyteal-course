@@ -15,6 +15,7 @@ const appIndex = 146142281;
 
 // connect to the algorand node
 const algod = new algosdk.Algodv2('','https://testnet-api.algonode.cloud', 443);
+console.log(algod)
 
 function App() {
   const [accountAddress, setAccountAddress] = useState(null);

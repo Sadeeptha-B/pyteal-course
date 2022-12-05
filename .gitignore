@@ -4,3 +4,5 @@ dryrun.msog
 dryrun.json
 build/
 teal-sourcemap-decoder/
+challenge-*
+accept-*
